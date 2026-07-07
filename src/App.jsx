@@ -1,108 +1,269 @@
-import { useEffect, useMemo, useState } from 'react'
-import './App.css'
+import { useEffect, useMemo, useState } from "react";
+import "./App.css";
 
-const emptyJob = () => ({
-  id: crypto.randomUUID(),
-  name: '', client: '', jobNumber: '', cratePrefix: '', nextCrate: 1,
-  createdAt: new Date().toISOString(), crates: []
-})
-const pad = n => String(n).padStart(4,'0')
-const today = () => new Date().toLocaleString()
-const fileToDataUrl = file => new Promise((res, rej) => { const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file) })
+const blankJob = { name: "", client: "", jobNumber: "", cratePrefix: "" };
 
-function App(){
-  const [jobs,setJobs]=useState(()=>{try{return JSON.parse(localStorage.getItem('cratepro_jobs'))||[]}catch{return []}})
-  const [activeJobId,setActiveJobId]=useState(()=>localStorage.getItem('cratepro_active_job')||'')
-  const [activeCrateId,setActiveCrateId]=useState('')
-  const [showJob,setShowJob]=useState(false)
-  const [jobDraft,setJobDraft]=useState(emptyJob())
-  const [itemDraft,setItemDraft]=useState(null)
-  const [boxName,setBoxName]=useState('')
-
-  useEffect(()=>localStorage.setItem('cratepro_jobs',JSON.stringify(jobs)),[jobs])
-  useEffect(()=>localStorage.setItem('cratepro_active_job',activeJobId||''),[activeJobId])
-  const activeJob = jobs.find(j=>j.id===activeJobId) || jobs[0]
-  const activeCrate = activeJob?.crates.find(c=>c.id===activeCrateId) || activeJob?.crates[0]
-
-  const totals = useMemo(()=>{
-    const crates=activeJob?.crates||[]
-    return { crates:crates.length, boxes:crates.reduce((a,c)=>a+c.boxes.length,0), items:crates.reduce((a,c)=>a+c.items.length,0), photos:crates.reduce((a,c)=>a+c.photos.length+c.items.reduce((x,i)=>x+i.photos.length,0),0)}
-  },[activeJob])
-
-  function saveJob(){
-    if(!jobDraft.name.trim()) return alert('Enter a job name')
-    const j={...jobDraft, cratePrefix: jobDraft.cratePrefix || jobDraft.name.split(' ')[0] || 'CRATE'}
-    setJobs(prev=>[j,...prev]); setActiveJobId(j.id); setShowJob(false); setJobDraft(emptyJob())
-  }
-  function newCrate(){
-    if(!activeJob) return alert('Create a job first')
-    const n=activeJob.nextCrate||1; const id=`${activeJob.cratePrefix||'CRATE'}-${pad(n)}`
-    const crate={id,status:'In Progress',createdAt:today(),condition:'Good',location:'',notes:'',photos:[],docs:[],boxes:[],items:[]}
-    setJobs(js=>js.map(j=>j.id===activeJob.id?{...j,nextCrate:n+1,crates:[crate,...j.crates]}:j)); setActiveCrateId(id)
-  }
-  async function addPhotos(type, files){
-    if(!activeJob||!activeCrate||!files?.length) return
-    const photos=await Promise.all([...files].map(async f=>({id:crypto.randomUUID(),type,name:f.name,at:today(),data:await fileToDataUrl(f)})))
-    setJobs(js=>js.map(j=>j.id!==activeJob.id?j:{...j,crates:j.crates.map(c=>c.id!==activeCrate.id?c:{...c,photos:[...photos,...c.photos]})}))
-  }
-  async function addDocs(type, files){
-    if(!activeJob||!activeCrate||!files?.length) return
-    const docs=await Promise.all([...files].map(async f=>({id:crypto.randomUUID(),type,name:f.name,at:today(),data:await fileToDataUrl(f)})))
-    setJobs(js=>js.map(j=>j.id!==activeJob.id?j:{...j,crates:j.crates.map(c=>c.id!==activeCrate.id?c:{...c,docs:[...docs,...c.docs]})}))
-  }
-  function addBox(){
-    if(!boxName.trim()||!activeJob||!activeCrate) return
-    const box={id:`B${pad(activeCrate.boxes.length+1).slice(-2)}`,name:boxName.trim(),createdAt:today(),notes:''}
-    setJobs(js=>js.map(j=>j.id!==activeJob.id?j:{...j,crates:j.crates.map(c=>c.id!==activeCrate.id?c:{...c,boxes:[...c.boxes,box]})}))
-    setBoxName('')
-  }
-  function startItem(){
-    if(!activeCrate) return alert('Create/open a crate first')
-    setItemDraft({id:`I${pad(activeCrate.items.length+1).slice(-3)}`,boxId:activeCrate.boxes[0]?.id||'',description:'',manufacturer:'',model:'',serial:'',qty:1,condition:'New',packingLine:'',notes:'',photos:[]})
-  }
-  async function addItemPhotos(files){
-    if(!files?.length) return
-    const photos=await Promise.all([...files].map(async f=>({id:crypto.randomUUID(),name:f.name,at:today(),data:await fileToDataUrl(f)})))
-    setItemDraft(d=>({...d,photos:[...photos,...(d.photos||[])]}))
-  }
-  function saveItem(){
-    if(!itemDraft.description.trim()) return alert('Enter a description')
-    setJobs(js=>js.map(j=>j.id!==activeJob.id?j:{...j,crates:j.crates.map(c=>c.id!==activeCrate.id?c:{...c,items:[itemDraft,...c.items]})}))
-    setItemDraft(null)
-  }
-  function exportCSV(){
-    if(!activeJob) return
-    const rows=[['Job','Client','Job Number','Crate','Box','Item','Description','Manufacturer','Model','Serial','Qty','Condition','Packing Line','Notes','Photo Count']]
-    activeJob.crates.forEach(c=>c.items.forEach(i=>rows.push([activeJob.name,activeJob.client,activeJob.jobNumber,c.id,i.boxId,i.id,i.description,i.manufacturer,i.model,i.serial,i.qty,i.condition,i.packingLine,i.notes,i.photos.length])))
-    const csv=rows.map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n')
-    download(`${activeJob.name.replace(/\W+/g,'_')}_inventory.csv`,csv,'text/csv')
-  }
-  function exportJSON(){ if(activeJob) download(`${activeJob.name.replace(/\W+/g,'_')}_backup.json`,JSON.stringify(activeJob,null,2),'application/json') }
-  function download(name,content,type){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([content],{type})); a.download=name; a.click(); URL.revokeObjectURL(a.href) }
-  function report(){ window.print() }
-
-  return <div className="app">
-    <header className="header"><div><h1>CratePro</h1><p>Field MVP • Phone-ready crate inventory</p></div><button onClick={()=>setShowJob(true)}>+ New Job</button></header>
-    <main className="grid">
-      <aside className="sidebar"><h2>Jobs</h2>{jobs.length===0&&<p className="muted">Create your first job.</p>}{jobs.map(j=><button className={`job ${activeJob?.id===j.id?'on':''}`} onClick={()=>{setActiveJobId(j.id);setActiveCrateId(j.crates[0]?.id||'')}} key={j.id}><b>{j.name}</b><span>{j.client||'No client'}</span><small>{j.jobNumber}</small></button>)}</aside>
-      <section className="main">
-        {!activeJob?<Welcome/>:<>
-          <div className="card head"><div><h2>{activeJob.name}</h2><p>{activeJob.client} • Job #{activeJob.jobNumber||'—'}</p></div><button onClick={newCrate}>+ New Crate</button></div>
-          <div className="stats"><Stat label="Crates" val={totals.crates}/><Stat label="Boxes" val={totals.boxes}/><Stat label="Items" val={totals.items}/><Stat label="Photos" val={totals.photos}/></div>
-          <div className="split"><div className="card"><h3>Crates</h3>{activeJob.crates.map(c=><button key={c.id} onClick={()=>setActiveCrateId(c.id)} className={`crate ${activeCrate?.id===c.id?'on':''}`}><b>{c.id}</b><span>{c.items.length} items • {c.photos.length} crate photos • {c.docs.length} docs</span></button>)}</div>
-          <div className="card">{!activeCrate?<p className="muted">Create or select a crate.</p>:<CratePanel c={activeCrate} addPhotos={addPhotos} addDocs={addDocs} boxName={boxName} setBoxName={setBoxName} addBox={addBox} startItem={startItem} exportCSV={exportCSV} exportJSON={exportJSON} report={report}/>}</div></div>
-          <Inventory c={activeCrate}/>
-        </>}
-      </section>
-    </main>
-    {showJob&&<Modal title="New Job" close={()=>setShowJob(false)}><FormInput label="Job Name" value={jobDraft.name} set={v=>setJobDraft({...jobDraft,name:v})}/><FormInput label="Client" value={jobDraft.client} set={v=>setJobDraft({...jobDraft,client:v})}/><FormInput label="Job Number" value={jobDraft.jobNumber} set={v=>setJobDraft({...jobDraft,jobNumber:v})}/><FormInput label="Crate Prefix" value={jobDraft.cratePrefix} set={v=>setJobDraft({...jobDraft,cratePrefix:v})} placeholder="Example: Edmonton"/><button className="wide" onClick={saveJob}>Create Job</button></Modal>}
-    {itemDraft&&<Modal title={`Add Item ${itemDraft.id}`} close={()=>setItemDraft(null)}><label>Photos<input type="file" accept="image/*" capture="environment" multiple onChange={e=>addItemPhotos(e.target.files)}/></label>{itemDraft.photos.length>0&&<div className="thumbs">{itemDraft.photos.map(p=><img key={p.id} src={p.data}/>)}</div>}<label>Box/Sub-container<select value={itemDraft.boxId} onChange={e=>setItemDraft({...itemDraft,boxId:e.target.value})}><option value="">Loose / No Box</option>{activeCrate.boxes.map(b=><option key={b.id} value={b.id}>{b.id} - {b.name}</option>)}</select></label><FormInput label="Description" value={itemDraft.description} set={v=>setItemDraft({...itemDraft,description:v})}/><FormInput label="Manufacturer" value={itemDraft.manufacturer} set={v=>setItemDraft({...itemDraft,manufacturer:v})}/><FormInput label="Model" value={itemDraft.model} set={v=>setItemDraft({...itemDraft,model:v})}/><FormInput label="Serial / Tag" value={itemDraft.serial} set={v=>setItemDraft({...itemDraft,serial:v})}/><FormInput label="Qty" value={itemDraft.qty} set={v=>setItemDraft({...itemDraft,qty:v})} type="number"/><label>Condition<select value={itemDraft.condition} onChange={e=>setItemDraft({...itemDraft,condition:e.target.value})}><option>New</option><option>Good</option><option>Damaged</option><option>Unknown</option></select></label><FormInput label="Packing List Line" value={itemDraft.packingLine} set={v=>setItemDraft({...itemDraft,packingLine:v})}/><label>Notes<textarea value={itemDraft.notes} onChange={e=>setItemDraft({...itemDraft,notes:e.target.value})}/></label><button className="wide" onClick={saveItem}>Save Item</button></Modal>}
-  </div>
+function uid() {
+  return crypto.randomUUID();
 }
-function Welcome(){return <div className="card"><h2>Start here</h2><p>Create a job, add crates, photograph documents and items, then export the inventory.</p></div>}
-function Stat({label,val}){return <div className="stat"><b>{val}</b><span>{label}</span></div>}
-function FormInput({label,value,set,type='text',placeholder=''}){return <label>{label}<input type={type} value={value} placeholder={placeholder} onChange={e=>set(e.target.value)}/></label>}
-function Modal({title,children,close}){return <div className="overlay"><div className="modal"><div className="modalHead"><h2>{title}</h2><button onClick={close}>×</button></div>{children}</div></div>}
-function CratePanel({c,addPhotos,addDocs,boxName,setBoxName,addBox,startItem,exportCSV,exportJSON,report}){return <><h2>{c.id}</h2><p className="muted">Created {c.createdAt}</p><div className="workflow"><span>□ Exterior</span><span>□ Packing List</span><span>□ Opened Crate</span><span>□ Box Inventory</span><span>□ Final Report</span></div><div className="buttons"><label className="fileBtn">📷 Crate/Content Photos<input type="file" accept="image/*" capture="environment" multiple onChange={e=>addPhotos('crate',e.target.files)}/></label><label className="fileBtn">📄 Packing List / Docs<input type="file" accept="image/*,.pdf" capture="environment" multiple onChange={e=>addDocs('packing list',e.target.files)}/></label><button onClick={startItem}>+ Add Item</button><button onClick={exportCSV}>Export CSV</button><button onClick={exportJSON}>Backup JSON</button><button onClick={report}>Print Report</button></div><h3>Boxes / Sub-containers</h3><div className="inline"><input value={boxName} onChange={e=>setBoxName(e.target.value)} placeholder="Rosemount box, Thompson Valve box..."/><button onClick={addBox}>Add Box</button></div><div className="chips">{c.boxes.map(b=><span key={b.id}>{b.id}: {b.name}</span>)}</div><h3>Crate Photos</h3><div className="thumbs">{c.photos.map(p=><img key={p.id} src={p.data} title={p.name}/>)}</div><h3>Documents</h3><div className="chips">{c.docs.map(d=><span key={d.id}>📄 {d.type}: {d.name}</span>)}</div></>}
-function Inventory({c}){if(!c)return null;return <div className="card printArea"><h2>Inventory</h2>{c.items.length===0?<p className="muted">No items yet.</p>:c.items.map(i=><div className="item" key={i.id}><div><b>{i.id} • {i.description}</b><p>{i.manufacturer} {i.model} • Serial/Tag: {i.serial||'—'} • Qty: {i.qty} • {i.condition}</p><small>Box: {i.boxId||'Loose'} • Packing Line: {i.packingLine||'—'}</small><p>{i.notes}</p></div><div className="thumbs small">{i.photos.map(p=><img key={p.id} src={p.data}/>)}</div></div>)}</div>}
-export default App
+
+function App() {
+  const [jobs, setJobs] = useState(() => JSON.parse(localStorage.getItem("cratepro_jobs") || "[]"));
+  const [jobForm, setJobForm] = useState(blankJob);
+  const [selectedJobId, setSelectedJobId] = useState("");
+  const [selectedCrateId, setSelectedCrateId] = useState("");
+  const [saved, setSaved] = useState(true);
+
+  useEffect(() => {
+    setSaved(false);
+    const t = setTimeout(() => {
+      localStorage.setItem("cratepro_jobs", JSON.stringify(jobs));
+      setSaved(true);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [jobs]);
+
+  const selectedJob = jobs.find(j => j.id === selectedJobId);
+  const selectedCrate = selectedJob?.crates.find(c => c.id === selectedCrateId);
+
+  function updateJob(job) {
+    setJobs(jobs.map(j => j.id === job.id ? job : j));
+  }
+
+  function updateCrate(crate) {
+    updateJob({ ...selectedJob, crates: selectedJob.crates.map(c => c.id === crate.id ? crate : c) });
+  }
+
+  function createJob() {
+    if (!jobForm.name || !jobForm.client || !jobForm.cratePrefix) return alert("Job name, client, and crate prefix are required.");
+
+    const job = { id: uid(), ...jobForm, crates: [], createdAt: new Date().toLocaleString() };
+    setJobs([job, ...jobs]);
+    setSelectedJobId(job.id);
+    setSelectedCrateId("");
+    setJobForm(blankJob);
+  }
+
+  function deleteJob(id) {
+    const job = jobs.find(j => j.id === id);
+    if (!confirm(`Delete job "${job.name}" and all crates, items, and photos?`)) return;
+    setJobs(jobs.filter(j => j.id !== id));
+    setSelectedJobId("");
+    setSelectedCrateId("");
+  }
+
+  function createCrate() {
+    const num = String(selectedJob.crates.length + 1).padStart(4, "0");
+    const crate = { id: `${selectedJob.cratePrefix}-${num}`, photos: [], items: [], notes: "", createdAt: new Date().toLocaleString() };
+    updateJob({ ...selectedJob, crates: [...selectedJob.crates, crate] });
+    setSelectedCrateId(crate.id);
+  }
+
+  function deleteCrate(id) {
+    const crate = selectedJob.crates.find(c => c.id === id);
+    if (!confirm(`Delete crate ${id}? This will delete ${crate.items.length} items and ${crate.photos.length} crate photos.`)) return;
+    updateJob({ ...selectedJob, crates: selectedJob.crates.filter(c => c.id !== id) });
+    setSelectedCrateId("");
+  }
+
+  function addItem() {
+    const num = String(selectedCrate.items.length + 1).padStart(3, "0");
+    const item = {
+      id: `${selectedCrate.id}-I${num}`,
+      description: "",
+      manufacturer: "",
+      model: "",
+      serial: "",
+      quantity: 1,
+      condition: "New / Good",
+      notes: "",
+      photos: []
+    };
+    updateCrate({ ...selectedCrate, items: [...selectedCrate.items, item] });
+  }
+
+  function updateItem(id, field, value) {
+    updateCrate({
+      ...selectedCrate,
+      items: selectedCrate.items.map(i => i.id === id ? { ...i, [field]: value } : i)
+    });
+  }
+
+  function deleteItem(id) {
+    const item = selectedCrate.items.find(i => i.id === id);
+    if (!confirm(`Delete item ${id}? This will delete ${item.photos.length} item photos.`)) return;
+    updateCrate({ ...selectedCrate, items: selectedCrate.items.filter(i => i.id !== id) });
+  }
+
+  function readPhotos(files, callback) {
+    Promise.all(Array.from(files).map(file => new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ id: uid(), name: file.name, data: reader.result, addedAt: new Date().toLocaleString() });
+      reader.readAsDataURL(file);
+    }))).then(callback);
+  }
+
+  function addCratePhotos(files) {
+    readPhotos(files, photos => updateCrate({ ...selectedCrate, photos: [...selectedCrate.photos, ...photos] }));
+  }
+
+  function deleteCratePhoto(id) {
+    if (!confirm("Delete this crate photo?")) return;
+    updateCrate({ ...selectedCrate, photos: selectedCrate.photos.filter(p => p.id !== id) });
+  }
+
+  function addItemPhotos(itemId, files) {
+    readPhotos(files, photos => updateCrate({
+      ...selectedCrate,
+      items: selectedCrate.items.map(i => i.id === itemId ? { ...i, photos: [...i.photos, ...photos] } : i)
+    }));
+  }
+
+  function deleteItemPhoto(itemId, photoId) {
+    if (!confirm("Delete this item photo?")) return;
+    updateCrate({
+      ...selectedCrate,
+      items: selectedCrate.items.map(i => i.id === itemId ? { ...i, photos: i.photos.filter(p => p.id !== photoId) } : i)
+    });
+  }
+
+  function exportCSV() {
+    if (!selectedJob) return;
+    const rows = [["Job","Client","Job Number","Crate","Item","Description","Manufacturer","Model","Serial","Qty","Condition","Notes","Photos"]];
+    selectedJob.crates.forEach(c => c.items.forEach(i => rows.push([
+      selectedJob.name, selectedJob.client, selectedJob.jobNumber, c.id, i.id, i.description, i.manufacturer, i.model, i.serial, i.quantity, i.condition, i.notes, i.photos.length
+    ])));
+    const csv = rows.map(r => r.map(v => `"${String(v).replaceAll('"','""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `${selectedJob.name || "cratepro"}-inventory.csv`;
+    a.click();
+  }
+
+  const totals = useMemo(() => {
+    if (!selectedJob) return { crates: 0, items: 0, photos: 0 };
+    return {
+      crates: selectedJob.crates.length,
+      items: selectedJob.crates.reduce((t, c) => t + c.items.length, 0),
+      photos: selectedJob.crates.reduce((t, c) => t + c.photos.length + c.items.reduce((x, i) => x + i.photos.length, 0), 0)
+    };
+  }, [selectedJob]);
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div>
+          <h1>CratePro</h1>
+          <p>Field Inventory MVP</p>
+        </div>
+        <span className={saved ? "saved" : "saving"}>{saved ? "● All changes saved" : "● Saving..."}</span>
+      </header>
+
+      <main className="layout">
+        <section className="panel">
+          <h2>New Job</h2>
+          <input placeholder="Job Name" value={jobForm.name} onChange={e => setJobForm({ ...jobForm, name: e.target.value })} />
+          <input placeholder="Client" value={jobForm.client} onChange={e => setJobForm({ ...jobForm, client: e.target.value })} />
+          <input placeholder="Job Number" value={jobForm.jobNumber} onChange={e => setJobForm({ ...jobForm, jobNumber: e.target.value })} />
+          <input placeholder="Crate Prefix" value={jobForm.cratePrefix} onChange={e => setJobForm({ ...jobForm, cratePrefix: e.target.value })} />
+          <button className="primary" onClick={createJob}>Create Job</button>
+
+          <h2>Jobs</h2>
+          {jobs.map(job => (
+            <div className="job-row" key={job.id}>
+              <button className="job-card" onClick={() => { setSelectedJobId(job.id); setSelectedCrateId(""); }}>
+                <strong>{job.name}</strong><span>{job.client}</span><small>{job.jobNumber}</small>
+              </button>
+              <button className="danger small" onClick={() => deleteJob(job.id)}>Delete</button>
+            </div>
+          ))}
+        </section>
+
+        <section className="content">
+          {!selectedJob && <h2>Select or create a job</h2>}
+
+          {selectedJob && (
+            <>
+              <div className="project-header">
+                <div>
+                  <h2>{selectedJob.name}</h2>
+                  <p>{selectedJob.client} • {selectedJob.jobNumber}</p>
+                  <p>{totals.crates} crates • {totals.items} items • {totals.photos} photos</p>
+                </div>
+                <button className="secondary" onClick={createCrate}>+ New Crate</button>
+              </div>
+
+              <button onClick={exportCSV}>Export CSV</button>
+
+              <h3>Crates</h3>
+              {selectedJob.crates.map(crate => (
+                <div className="crate-line" key={crate.id}>
+                  <button className="crate-card" onClick={() => setSelectedCrateId(crate.id)}>
+                    <h3>{crate.id}</h3>
+                    <p>{crate.photos.length} crate photos • {crate.items.length} items</p>
+                  </button>
+                  <button className="danger small" onClick={() => deleteCrate(crate.id)}>Delete</button>
+                </div>
+              ))}
+            </>
+          )}
+
+          {selectedCrate && (
+            <section className="workflow">
+              <h2>{selectedCrate.id}</h2>
+
+              <label className="upload">
+                Add Crate Photos from Camera / Photos / Files
+                <input type="file" accept="image/*" multiple onChange={e => addCratePhotos(e.target.files)} />
+              </label>
+
+              <div className="photo-grid">
+                {selectedCrate.photos.map(photo => (
+                  <div className="photo-wrap" key={photo.id}>
+                    <img src={photo.data} alt={photo.name} />
+                    <button className="danger small" onClick={() => deleteCratePhoto(photo.id)}>Delete</button>
+                  </div>
+                ))}
+              </div>
+
+              <button className="primary" onClick={addItem}>+ Add Item</button>
+
+              {selectedCrate.items.map(item => (
+                <div className="item-card" key={item.id}>
+                  <div className="item-head">
+                    <h3>{item.id}</h3>
+                    <button className="danger small" onClick={() => deleteItem(item.id)}>Delete Item</button>
+                  </div>
+
+                  <input placeholder="Description" value={item.description} onChange={e => updateItem(item.id, "description", e.target.value)} />
+                  <input placeholder="Manufacturer" value={item.manufacturer} onChange={e => updateItem(item.id, "manufacturer", e.target.value)} />
+                  <input placeholder="Model" value={item.model} onChange={e => updateItem(item.id, "model", e.target.value)} />
+                  <input placeholder="Serial Number" value={item.serial} onChange={e => updateItem(item.id, "serial", e.target.value)} />
+                  <input type="number" placeholder="Quantity" value={item.quantity} onChange={e => updateItem(item.id, "quantity", e.target.value)} />
+                  <input placeholder="Condition" value={item.condition} onChange={e => updateItem(item.id, "condition", e.target.value)} />
+                  <textarea placeholder="Notes" value={item.notes} onChange={e => updateItem(item.id, "notes", e.target.value)} />
+
+                  <label className="upload">
+                    Add Item Photos from Camera / Photos / Files
+                    <input type="file" accept="image/*" multiple onChange={e => addItemPhotos(item.id, e.target.files)} />
+                  </label>
+
+                  <div className="photo-grid">
+                    {item.photos.map(photo => (
+                      <div className="photo-wrap" key={photo.id}>
+                        <img src={photo.data} alt={photo.name} />
+                        <button className="danger small" onClick={() => deleteItemPhoto(item.id, photo.id)}>Delete</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
+
+export default App;
