@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
+import { loadJobs, saveJobs } from "./storage";
 
 const blankJob = { name: "", client: "", jobNumber: "", cratePrefix: "" };
 
@@ -8,20 +9,45 @@ function uid() {
 }
 
 function App() {
-  const [jobs, setJobs] = useState(() => JSON.parse(localStorage.getItem("cratepro_jobs") || "[]"));
+  const [jobs, setJobs] = useState([]);
+  const [storageReady, setStorageReady] = useState(false);
   const [jobForm, setJobForm] = useState(blankJob);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [selectedCrateId, setSelectedCrateId] = useState("");
   const [saved, setSaved] = useState(true);
 
   useEffect(() => {
-    setSaved(false);
-    const t = setTimeout(() => {
-      localStorage.setItem("cratepro_jobs", JSON.stringify(jobs));
+  async function restoreJobs() {
+    try {
+      const storedJobs = await loadJobs();
+      setJobs(storedJobs);
+    } catch (error) {
+      console.error("Unable to load saved jobs:", error);
+    } finally {
+      setStorageReady(true);
+    }
+  }
+
+  restoreJobs();
+}, []);
+
+useEffect(() => {
+  if (!storageReady) return;
+
+  setSaved(false);
+
+  const timer = setTimeout(async () => {
+    try {
+      await saveJobs(jobs);
       setSaved(true);
-    }, 300);
-    return () => clearTimeout(t);
-  }, [jobs]);
+    } catch (error) {
+      console.error("Unable to save jobs:", error);
+      setSaved(false);
+    }
+  }, 500);
+
+  return () => clearTimeout(timer);
+}, [jobs, storageReady]);
 
   const selectedJob = jobs.find(j => j.id === selectedJobId);
   const selectedCrate = selectedJob?.crates.find(c => c.id === selectedCrateId);
