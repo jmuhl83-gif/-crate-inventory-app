@@ -128,3 +128,21 @@ button, .upload {
     font-size: 18px;
   }
 }
+.job-card strong,
+.job-card span,
+.job-card small {
+  display: block;
+}
+
+.job-card strong {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.job-card span {
+  margin-bottom: 3px;
+}
+
+.job-card small {
+  color: #64748b;
+}

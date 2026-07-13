@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { jsPDF } from "jspdf";
 import "./App.css";
 import { loadJobs, saveJobs } from "./storage";
 
@@ -55,6 +56,62 @@ useEffect(() => {
   function updateJob(job) {
     setJobs(jobs.map(j => j.id === job.id ? job : j));
   }
+
+  function exportJobPdf(job) {
+  const doc = new jsPDF();
+
+  let y = 20;
+
+  doc.setFontSize(20);
+  doc.text(job.name || "Inventory Report", 20, y);
+
+  y += 12;
+
+  doc.setFontSize(12);
+
+  doc.text(`Client: ${job.client || ""}`, 20, y);
+  y += 8;
+
+  doc.text(`Job Number: ${job.jobNumber || ""}`, 20, y);
+  y += 12;
+
+  job.crates.forEach((crate, index) => {
+    if (y > 240) {
+      doc.addPage();
+      y = 20;
+    }
+
+    doc.setFontSize(16);
+    doc.text(`Crate ${crate.number}`, 20, y);
+
+    y += 10;
+
+    doc.setFontSize(11);
+
+    doc.text(
+      `${crate.photos.length} photos • ${crate.items.length} items`,
+      20,
+      y
+    );
+
+    y += 12;
+
+    crate.items.forEach((item) => {
+      if (y > 260) {
+        doc.addPage();
+        y = 20;
+      }
+
+      doc.text(`• ${item.name || "Unnamed Item"}`, 25, y);
+
+      y += 8;
+    });
+
+    y += 10;
+  });
+
+  doc.save(`${job.name || "inventory"}.pdf`);
+}
 
   function updateCrate(crate) {
     updateJob({ ...selectedJob, crates: selectedJob.crates.map(c => c.id === crate.id ? crate : c) });
@@ -198,9 +255,17 @@ useEffect(() => {
           {jobs.map(job => (
             <div className="job-row" key={job.id}>
               <button className="job-card" onClick={() => { setSelectedJobId(job.id); setSelectedCrateId(""); }}>
-                <strong>{job.name}</strong><span>{job.client}</span><small>{job.jobNumber}</small>
+                <strong>{job.name}</strong>
+                <span>{job.client}</span>
+                <small>Job #{job.jobNumber}</small>
               </button>
               <button className="danger small" onClick={() => deleteJob(job.id)}>Delete</button>
+              <button
+  className="primary small"
+  onClick={() => exportJobPdf(job)}
+>
+  Export PDF
+</button>
             </div>
           ))}
         </section>
