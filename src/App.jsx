@@ -57,60 +57,212 @@ useEffect(() => {
     setJobs(jobs.map(j => j.id === job.id ? job : j));
   }
 
-  function exportJobPdf(job) {
+  async function exportJobPdf(job) {
   const doc = new jsPDF();
-
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 15;
   let y = 20;
 
-  doc.setFontSize(20);
-  doc.text(job.name || "Inventory Report", 20, y);
-
-  y += 12;
-
-  doc.setFontSize(12);
-
-  doc.text(`Client: ${job.client || ""}`, 20, y);
-  y += 8;
-
-  doc.text(`Job Number: ${job.jobNumber || ""}`, 20, y);
-  y += 12;
-
-  job.crates.forEach((crate, index) => {
-    if (y > 240) {
+  function addPageIfNeeded(requiredHeight = 20) {
+    if (y + requiredHeight > pageHeight - 18) {
       doc.addPage();
       y = 20;
     }
+  }
 
-    doc.setFontSize(16);
-    doc.text(`Crate ${crate.number}`, 20, y);
+  function photoToJpeg(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
 
-    y += 10;
+      image.onload = () => {
+        const maxWidth = 1400;
+        const scale = Math.min(1, maxWidth / image.width);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+
+        const context = canvas.getContext("2d");
+
+        if (!context) {
+          reject(new Error("Unable to process image."));
+          return;
+        }
+
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      };
+
+      image.onerror = () => reject(new Error("Unable to load image."));
+      image.src = dataUrl;
+    });
+  }
+
+  async function addPhotoSection(photos, heading) {
+    if (!photos?.length) return;
+
+    addPageIfNeeded(15);
 
     doc.setFontSize(11);
+    doc.setFont(undefined, "bold");
+    doc.text(heading, margin, y);
+    doc.setFont(undefined, "normal");
+    y += 7;
 
-    doc.text(
-      `${crate.photos.length} photos • ${crate.items.length} items`,
-      20,
-      y
-    );
+    const gap = 6;
+    const imageWidth = (pageWidth - margin * 2 - gap) / 2;
+    const imageHeight = 58;
 
-    y += 12;
+    for (let index = 0; index < photos.length; index += 2) {
+      addPageIfNeeded(imageHeight + 9);
 
-    crate.items.forEach((item) => {
-      if (y > 260) {
-        doc.addPage();
-        y = 20;
+      const pair = photos.slice(index, index + 2);
+
+      for (let position = 0; position < pair.length; position += 1) {
+        const photo = pair[position];
+
+        if (!photo?.data) continue;
+
+        try {
+          const jpeg = await photoToJpeg(photo.data);
+          const x = margin + position * (imageWidth + gap);
+
+          doc.addImage(
+            jpeg,
+            "JPEG",
+            x,
+            y,
+            imageWidth,
+            imageHeight,
+            undefined,
+            "FAST"
+          );
+        } catch (error) {
+          console.error("Unable to add photo to PDF:", error);
+        }
       }
 
-      doc.text(`• ${item.name || "Unnamed Item"}`, 25, y);
+      y += imageHeight + 8;
+    }
+  }
 
-      y += 8;
-    });
+  doc.setFontSize(22);
+  doc.setFont(undefined, "bold");
+  doc.text(job.name || "Inventory Report", margin, y);
+  y += 11;
 
-    y += 10;
-  });
+  doc.setFontSize(11);
+  doc.setFont(undefined, "normal");
+  doc.text(`Client: ${job.client || "Not entered"}`, margin, y);
+  y += 7;
+  doc.text(`Job Number: ${job.jobNumber || "Not entered"}`, margin, y);
+  y += 7;
+  doc.text(`Report Date: ${new Date().toLocaleDateString()}`, margin, y);
+  y += 12;
 
-  doc.save(`${job.name || "inventory"}.pdf`);
+  for (let crateIndex = 0; crateIndex < (job.crates || []).length; crateIndex += 1) {
+    const crate = job.crates[crateIndex];
+
+    const crateName =
+      crate.id ||
+      crate.name ||
+      `${job.cratePrefix || "Crate"}-${String(crateIndex + 1).padStart(4, "0")}`;
+
+    addPageIfNeeded(30);
+
+    doc.setFontSize(16);
+    doc.setFont(undefined, "bold");
+    doc.text(`Crate ${crateName}`, margin, y);
+    y += 8;
+
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    doc.text(
+      `${crate.photos?.length || 0} crate photos • ${crate.items?.length || 0} items`,
+      margin,
+      y
+    );
+    y += 9;
+
+    if (crate.notes) {
+      const crateNoteLines = doc.splitTextToSize(
+        `Crate Notes: ${crate.notes}`,
+        pageWidth - margin * 2
+      );
+
+      addPageIfNeeded(crateNoteLines.length * 5 + 5);
+      doc.text(crateNoteLines, margin, y);
+      y += crateNoteLines.length * 5 + 5;
+    }
+
+    await addPhotoSection(crate.photos, "Crate Photos");
+
+    for (const item of crate.items || []) {
+      addPageIfNeeded(35);
+
+      doc.setFontSize(12);
+      doc.setFont(undefined, "bold");
+      doc.text(
+        item.description || item.name || item.id || "Unnamed Item",
+        margin + 5,
+        y
+      );
+      y += 7;
+
+      doc.setFontSize(10);
+      doc.setFont(undefined, "normal");
+
+      const itemDetails = [
+        item.manufacturer && `Manufacturer: ${item.manufacturer}`,
+        item.model && `Model: ${item.model}`,
+        item.serial && `Serial Number: ${item.serial}`,
+        `Quantity: ${item.quantity || 1}`,
+        item.condition && `Condition: ${item.condition}`,
+        item.notes && `Notes: ${item.notes}`,
+      ].filter(Boolean);
+
+      for (const detail of itemDetails) {
+        const detailLines = doc.splitTextToSize(
+          detail,
+          pageWidth - margin * 2 - 10
+        );
+
+        addPageIfNeeded(detailLines.length * 5 + 2);
+        doc.text(detailLines, margin + 5, y);
+        y += detailLines.length * 5 + 2;
+      }
+
+      await addPhotoSection(item.photos, "Item Photos");
+      y += 5;
+    }
+
+    y += 8;
+  }
+
+  const totalPages = doc.getNumberOfPages();
+
+  for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+    doc.setPage(pageNumber);
+    doc.setFontSize(9);
+    doc.setFont(undefined, "normal");
+    doc.text(
+      `Page ${pageNumber} of ${totalPages}`,
+      pageWidth - margin,
+      pageHeight - 8,
+      { align: "right" }
+    );
+  }
+
+  const safeFileName = (job.name || "inventory")
+    .replace(/[^a-z0-9]/gi, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  doc.save(`${safeFileName}-Inventory.pdf`);
 }
 
   function updateCrate(crate) {
