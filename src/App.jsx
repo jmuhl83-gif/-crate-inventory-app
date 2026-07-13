@@ -438,16 +438,34 @@ useEffect(() => {
 
               <button onClick={exportCSV}>Export CSV</button>
 
-              <h3>Crates</h3>
-              {selectedJob.crates.map(crate => (
-                <div className="crate-line" key={crate.id}>
-                  <button className="crate-card" onClick={() => setSelectedCrateId(crate.id)}>
-                    <h3>{crate.id}</h3>
-                    <p>{crate.photos.length} crate photos • {crate.items.length} items</p>
-                  </button>
-                  <button className="danger small" onClick={() => deleteCrate(crate.id)}>Delete</button>
-                </div>
-              ))}
+              <details className="collapse-section" open>
+  <summary>
+    Crates ({selectedJob.crates.length})
+  </summary>
+
+  <div className="collapse-content">
+    {selectedJob.crates.map(crate => (
+      <div className="crate-line" key={crate.id}>
+        <button
+          className="crate-card"
+          onClick={() => setSelectedCrateId(crate.id)}
+        >
+          <h3>{crate.id}</h3>
+          <p>
+            {crate.photos.length} crate photos • {crate.items.length} items
+          </p>
+        </button>
+
+        <button
+          className="danger small"
+          onClick={() => deleteCrate(crate.id)}
+        >
+          Delete
+        </button>
+      </div>
+    ))}
+  </div>
+</details>
             </>
           )}
 

@@ -146,3 +146,28 @@ button, .upload {
 .job-card small {
   color: #64748b;
 }
+
+.collapse-section {
+  margin: 16px 0;
+  border: 1px solid #d7dde7;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.collapse-section > summary {
+  padding: 16px;
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  background: #f4f6f9;
+  list-style-position: inside;
+}
+
+.collapse-section > summary:hover {
+  background: #e9edf3;
+}
+
+.collapse-content {
+  padding: 14px;
+}
