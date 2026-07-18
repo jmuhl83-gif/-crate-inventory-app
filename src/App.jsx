@@ -1,12 +1,45 @@
 import { useEffect, useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import "./App.css";
-import { loadJobs, saveJobs } from "./storage";
+import { loadJobs, saveJobs, savePhoto, loadPhoto } from "./storage";
 
 const blankJob = { name: "", client: "", jobNumber: "", cratePrefix: "" };
 
 function uid() {
   return crypto.randomUUID();
+}
+
+function StoredPhoto({ photo }) {
+  const [src, setSrc] = useState(photo.data || "");
+
+  useEffect(() => {
+    let active = true;
+
+    async function getPhoto() {
+      if (photo.data) {
+        setSrc(photo.data);
+        return;
+      }
+
+      const savedData = await loadPhoto(photo.id);
+
+      if (active && savedData) {
+        setSrc(savedData);
+      }
+    }
+
+    getPhoto();
+
+    return () => {
+      active = false;
+    };
+  }, [photo]);
+
+  if (!src) {
+    return <div>Loading photo...</div>;
+  }
+
+  return <img src={src} alt={photo.name || "Crate photo"} loading="lazy" />;
 }
 
 function App() {
@@ -359,12 +392,18 @@ useEffect(() => {
 
 async function readPhotos(files, callback) {
   const photos = await Promise.all(
-    Array.from(files).map(async (file) => ({
-      id: uid(),
-      name: file.name,
-      data: await compressImage(file),
-      addedAt: new Date().toLocaleString()
-    }))
+    Array.from(files).map(async file => {
+      const id = uid();
+      const data = await compressImage(file);
+
+      await savePhoto(id, data);
+
+      return {
+        id,
+        name: file.name,
+        addedAt: new Date().toLocaleString(),
+      };
+    })
   );
 
   callback(photos);
@@ -513,7 +552,7 @@ async function readPhotos(files, callback) {
               <div className="photo-grid">
                 {selectedCrate.photos.map(photo => (
                   <div className="photo-wrap" key={photo.id}>
-                    <img src={photo.data} alt={photo.name} />
+                    <StoredPhoto photo={photo} />
                     <button className="danger small" onClick={() => deleteCratePhoto(photo.id)}>Delete</button>
                   </div>
                 ))}
