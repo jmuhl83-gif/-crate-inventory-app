@@ -330,13 +330,45 @@ useEffect(() => {
     updateCrate({ ...selectedCrate, items: selectedCrate.items.filter(i => i.id !== id) });
   }
 
-  function readPhotos(files, callback) {
-    Promise.all(Array.from(files).map(file => new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve({ id: uid(), name: file.name, data: reader.result, addedAt: new Date().toLocaleString() });
-      reader.readAsDataURL(file);
-    }))).then(callback);
-  }
+  async function compressImage(file) {
+  return new Promise((resolve) => {
+    const img = new Image();
+
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+
+      const maxWidth = 1200;
+
+      const scale = Math.min(1, maxWidth / img.width);
+
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+
+      const ctx = canvas.getContext("2d");
+
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      resolve(
+        canvas.toDataURL("image/jpeg", 0.7)
+      );
+    };
+
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function readPhotos(files, callback) {
+  const photos = await Promise.all(
+    Array.from(files).map(async (file) => ({
+      id: uid(),
+      name: file.name,
+      data: await compressImage(file),
+      addedAt: new Date().toLocaleString()
+    }))
+  );
+
+  callback(photos);
+}
 
   function addCratePhotos(files) {
     readPhotos(files, photos => updateCrate({ ...selectedCrate, photos: [...selectedCrate.photos, ...photos] }));
